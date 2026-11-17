@@ -1,11 +1,16 @@
 # Vending Machine with Arduino
 
-> In progress...
-
-## Hardware
+## Materiales (Hardware)
 - [X] 1x Arduino UNO
 - [X] 2x LEDs
-- [X] 1x button
-- [X] 1x resistencia de 330Ω
-- [X] Protoboard y cables de conexión (MM)
-- [X] LCD
+- [X] 1x botón
+- [X] 1x Ultrasonido
+- [X] 1x DHT11
+- [X] 1x Joystick
+- [X] 1x 16x2 LCD
+
+![Wiring_diagram](./docs/vending_machine_circuit.png)
+> Esquema de conexión
+
+## Documentación
+Documentación completa disponible en la Wiki
