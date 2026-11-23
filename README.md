@@ -145,6 +145,6 @@ Las tres primeras pantallas se actualizan solas cada medio segundo gracias al hi
 En la fila de arriba siempre pone MENU ADMIN, y en la de abajo la opción en la que estoy. En Precios aparece el catálogo. Al pulsar sobre un producto, puedo subir o bajar su precio de 0,05 en 0,05 euros con el joystick, y lo guardo pulsando otra vez. Si vuelvo atrás con la izquierda sin pulsar, el precio no cambia. Los precios nuevos se ven enseguida en el menú de los clientes.
 
 ## Demo
-- [Modo Arranque y Servicio](https://youtu.be/CODIGO)
-- [Cancelación y Reinicio de Estado](https://youtu.be/CODIGO)
-- [Modo Administración (Admin)](https://youtu.be/CODIGO)
+- [Modo Arranque y Servicio](https://youtu.be/HCgU-bFm39k?si=RAk8QkCO6jZPm9O0)
+- [Cancelación y Reinicio de Estado](https://youtu.be/F09XxKwePwQ?si=wyw5BTBqVzQ7wHdA)
+- [Modo Administración (Admin)](https://youtu.be/d_26rkWZ6sM?si=UmkAzz_RtDMamuOx)
