@@ -5,24 +5,25 @@
 
 // últimos valores leídos de los sensores
 static float distance = NO_ECHO_DISTANCE;
+static int misses = 0; // medidas seguidas sin eco
 
 static DHT dht(DHT_PIN, DHT11);
 static float temperature = NAN; // NAN significa que todavía no hay lectura
 static float humidity = NAN;
 
 // estado del joystick
-static JoyEvent lastDirection = JOY_NONE;
-static int lastSwState = HIGH;
-static unsigned long lastSwChange = 0;
+static JoyEvent lastDirection = JOY_NONE; // última dirección en la que estaba
+static int lastSwState = HIGH; // último estado del botón del joystick
+static unsigned long lastSwChange = 0; // cuándo cambió por última vez
 
 // estado del botón externo
 static volatile bool buttonChanged = false; // volatile porque lo cambia la interrupción
 
-static int lastLevel = HIGH;
-static unsigned long lastChange = 0;
-static int buttonState = HIGH;
-static unsigned long pressStart = 0;
-static bool adminDone = false;
+static int lastLevel = HIGH; // último valor leído en el pin, con rebotes
+static unsigned long lastChange = 0; // cuándo cambió el pin por última vez
+static int buttonState = HIGH; // estado del botón ya sin rebotes
+static unsigned long pressStart = 0; // cuándo se empezó a pulsar
+static bool adminDone = false; // para no activar el modo admin dos veces en la misma pulsación
 
 // interrupción del botón, solo avisa de que ha cambiado, para que sea muy corta
 static void onButtonChange() {
@@ -55,8 +56,14 @@ void updateDistance() {
     long duration = pulseIn(ECHO, HIGH, ECHO_TIMEOUT);
 
     if (duration == 0) {
-        distance = NO_ECHO_DISTANCE; // no ha vuelto el eco, no hay nadie cerca
+        // a veces el sensor pierde un eco aunque haya algo delante,
+        // así que solo digo fuera de rango si falla varias veces seguidas
+        misses = misses + 1;
+        if (misses >= MAX_MISSES) {
+            distance = NO_ECHO_DISTANCE; // no ha vuelto el eco, no hay nadie cerca
+        }
     } else {
+        misses = 0;
         distance = duration * CM_PER_US; // paso el tiempo a centímetros
     }
 }
