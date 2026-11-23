@@ -24,7 +24,7 @@ Controlador software para una máquina expendedora de café basada en **Arduino 
 | LCD (pines D4 a D7) | A2 a A5 | | Ultrasonidos (Trig) | 8 | | Joystick (eje VRx) | A1 |
 | LCD (pin RS) | 5 | | LED1 | 11 | | Joystick (botón SW) | 4 |
 
-El botón externo está en el pin 2 porque es uno de los pines del Arduino que admite interrupciones. El LED2 está en el pin 6 porque permite cambiar su brillo con PWM y no le afecta TimerOne, que usa los pines 9, 10 y 11. El LCD usa solo 4 cables de datos, el pin RW va a GND y el contraste se regula con un potenciómetro. Todos los componentes se alimentan desde las líneas de 5V y GND de la protoboard, conectadas al Arduino.
+El botón externo está en el pin 2 porque es uno de los pines del Arduino que admite interrupciones. El LED2 está en el pin 6 porque permite cambiar su brillo con PWM. El LCD usa solo 4 cables de datos, el pin RW va a GND y el contraste se regula con un potenciómetro. Todos los componentes se alimentan desde las líneas de 5V y GND de la protoboard, conectadas al Arduino.
 
 ### Esquema
 ![Esquema del circuito](./docs/vending_machine_circuit.png)
@@ -52,15 +52,7 @@ El **modo Servicio** tiene a su vez varias fases, que se van sucediendo con cada
 Así cada parte del programa sabe en qué situación está y qué tiene que hacer después.
 
 ### Sin delay()
-En todo el programa no hay ningún `delay()`, porque deja el Arduino parado y no podría leer el joystick ni los sensores mientras espera. Para controlar los tiempos uso `millis()`. Guardo el momento en el que empieza una fase y en cada vuelta compruebo si ya ha pasado el tiempo que necesito.
-```cpp
-if (millis() - stateStart >= ENV_DISPLAY_TIME) {
-    selected = 0;
-    showProduct(selected);
-    serviceState = MENU;
-}
-```
-Como las fases del modo Servicio nunca ocurren a la vez, todas usan la misma variable `stateStart` para guardar cuándo empezaron.
+En todo el programa no hay ningún `delay()`, porque deja el Arduino parado y no podría leer el joystick ni los sensores mientras espera. Para controlar los tiempos uso `millis()`. Guardo el momento en el que empieza una fase y en cada vuelta compruebo si ya ha pasado el tiempo que necesito. Como las fases del modo Servicio nunca ocurren a la vez, todas usan la misma variable `stateStart`.
 
 ### Hilos con ArduinoThread
 Las tareas que se repiten cada cierto tiempo las he puesto en hilos de la librería ArduinoThread, que gestiona un `ThreadController`. Tengo tres hilos.
@@ -79,75 +71,38 @@ controller.add(&distanceThread);
 ```
 En `loop()` solo tengo que llamar a `controller.run()` y cada hilo se ejecuta cuando le toca. El hilo de refresco está desactivado casi todo el tiempo y solo lo activo mientras se ve una de esas pantallas, porque en el resto del programa no hace falta.
 
-### Interrupción por tiempo con TimerOne
-Con la librería TimerOne he configurado el Timer1 para que lance una interrupción cada segundo.
-```cpp
-Timer1.initialize(TIMER_PERIOD);
-Timer1.attachInterrupt(onTimer);
-```
-Esta interrupción hace dos cosas. Durante el arranque cambia el estado del LED1 para hacer el parpadeo, y siempre suma un segundo al contador de tiempo encendido que se ve en el modo Admin. Como TimerOne usa el mismo temporizador que el PWM de los pines 9, 10 y 11, puse el LED2 en el pin 6, que depende del Timer0.
+### Por qué no uso TimerOne
+Al principio hice el parpadeo del arranque y el contador del modo Admin con una interrupción de TimerOne cada segundo. Con esa versión la pantalla se quedaba en blanco y el parpadeo no terminaba bien, y además TimerOne usa el mismo temporizador que el PWM de los pines 9 y 10. Al final lo quité y lo hago todo con `millis()`, igual que el resto de tiempos. El parpadeo comprueba si ha pasado un segundo desde el último cambio del LED, y el contador es `millis() / 1000`, los segundos que lleva encendida la placa.
 
 ### Interrupción del botón externo
 El botón externo está en el pin 2 con la resistencia pull-up interna activada. Por eso se lee HIGH cuando no está pulsado y LOW cuando se pulsa. La interrupción está en modo `CHANGE`, así que salta tanto al pulsar como al soltar.
 ```cpp
-void onButtonChange() {
-    if (digitalRead(BUTTON) == LOW) {
-        pressed = true;
-        pressStart = millis();
-    } else {
-        if (pressed) {
-            unsigned long d = millis() - pressStart;
-            if (d > BUTTON_DEBOUNCE) {
-                pressDuration = d;
-            }
-        }
-        pressed = false;
-    }
+static void onButtonChange() {
+    buttonChanged = true;
 }
 ```
-Al pulsar guardo el momento, y al soltar calculo cuánto tiempo ha estado pulsado. He intentado que la rutina sea lo más corta posible, sin escribir en el LCD ni usar el puerto serie. Las variables que comparte con el resto del programa son `volatile`, y las pulsaciones de menos de 50 ms las descarto porque son rebotes del botón.
+Cada vez que pulso o suelto el botón, la interrupción solo pone un aviso a `true`, para que sea lo más corta posible. La variable es `volatile` porque la cambia la interrupción. Desde el programa principal copio el aviso y lo borro con las interrupciones paradas un instante, para que no salte otra interrupción justo en medio.
 
-Cuando leo esas variables desde el programa principal, desactivo las interrupciones un instante. Son variables de 4 bytes y el Arduino las lee en varios pasos, así que si la interrupción saltara justo en medio podría leer un valor a medias.
+Después leo el pin y aplico el antirrebote. Un cambio solo cuenta si el pin lleva 50 ms con el mismo valor. Mi primera versión calculaba el tiempo dentro de la interrupción, pero los rebotes del botón reiniciaban la cuenta y tenía que mantenerlo pulsado el doble de tiempo.
 
 El modo Admin se activa en cuanto el botón lleva 5 segundos pulsado, sin tener que soltarlo. La cancelación, en cambio, se decide al soltar, porque mientras sigue pulsado no se sabe si se va a quedar entre 2 y 3 segundos.
 
-### Joystick
-Los ejes se leen con `analogRead()`, que da valores entre 0 y 1023 con el centro en unos 512. Considero que hay movimiento cuando el valor baja de 300 o sube de 700, para tener margen cuando el joystick está quieto.
+Para comprobar los tiempos hice un programa de prueba que escribía por el puerto serie cuánto duraba cada pulsación, y así vi que yo contaba los segundos demasiado rápido.
 
-Cada movimiento lo detecto una sola vez, justo cuando el joystick sale del centro. Si no lo hiciera así, al mantenerlo hacia abajo el menú avanzaría miles de veces por segundo. El botón del joystick tiene su propio antirrebote de 50 ms. En mi montaje el joystick está girado, por eso en el código el eje VRx es el que controla arriba y abajo.
+### Sensores y entradas
+**Joystick.** Leo los ejes con `analogRead()`, que da valores de 0 a 1023. Hay movimiento cuando el valor baja de 300 o sube de 700, y cada movimiento lo detecto una sola vez, al salir del centro, para que el menú no avance sin parar. En mi montaje el joystick está girado, por eso el eje VRx es el que controla arriba y abajo.
 
-### Sensor de ultrasonidos
-Para medir la distancia envío un pulso de 10 microsegundos por el pin Trig y mido con `pulseIn()` cuánto tiempo está el pin Echo en HIGH. Ese tiempo es lo que tarda el sonido en ir y volver, así que lo multiplico por 0,01715 cm por microsegundo, que es la velocidad del sonido dividida entre dos.
-```cpp
-long duration = pulseIn(ECHO, HIGH, ECHO_TIMEOUT);
-distance = duration * CM_PER_US;
-```
-A `pulseIn()` le pongo un tiempo máximo de 30 ms. Sin ese límite podría quedarse esperando hasta un segundo si no llega el eco, y así como mucho espera 30 ms cada 200 ms. Si no llega eco, lo trato como fuera de rango y nunca como un cliente cerca.
+**Ultrasonidos.** Envío un pulso de 10 microsegundos por Trig y mido con `pulseIn()` cuánto tarda en volver el eco. Lo multiplico por 0,01715, que es la velocidad del sonido en cm por microsegundo dividida entre dos. Le pongo un tiempo máximo de 30 ms para que no se quede esperando. A veces el sensor pierde un eco aunque haya algo delante, así que solo lo trato como fuera de rango si fallan 5 medidas seguidas, es decir, un segundo entero sin eco.
 
-### Sensor DHT11
-La temperatura y la humedad las leo con la librería DHT de Adafruit. Si una lectura falla, la librería devuelve un valor que no es un número. En ese caso me quedo con la última lectura buena, y si todavía no hay ninguna, en la pantalla salen dos guiones en vez de un valor falso.
+**DHT11.** Lo leo con la librería de Adafruit. Si una lectura falla me quedo con la última buena, y si no hay ninguna salen dos guiones. Al principio siempre salían los guiones porque tenía la señal en el pin equivocado del módulo.
 
-### Precios en céntimos
-Guardo los precios como números enteros en céntimos, por ejemplo 125 para 1,25 euros. Así evito los errores de redondeo de los decimales al subir o bajar el precio de 0,05 en 0,05.
-```cpp
-int prices[NUM_PRODUCTS] = {100, 110, 125, 150, 200};
-```
+**Precios.** Los guardo en céntimos, por ejemplo 125 para 1,25 euros, para evitar errores de redondeo al cambiarlos de 0,05 en 0,05.
 
 ### Watchdog
-Uso el watchdog con un tiempo de 2 segundos. Lo desactivo al empezar `setup()`, lo activo al final y lo reinicio al principio de cada vuelta de `loop()`. Como el programa nunca se bloquea, normalmente no llega a saltar, pero si algo se quedara colgado la placa se reiniciaría sola.
-```cpp
-void loop() {
-    wdt_reset();
-    controller.run();
-    ...
-}
-```
-
-### Pantalla LCD
-La pantalla tiene 16 columnas, así que los mensajes largos como ESPERANDO CLIENTE o Preparando Café los reparto en las dos filas. Tampoco tiene tildes ni el símbolo del euro, por eso escribo Cafe y EUR. Para el símbolo de grado uso el carácter 223, que es el que le corresponde en este tipo de pantallas.
+Uso el watchdog con un tiempo de 2 segundos. Lo desactivo al empezar `setup()`, lo activo al final y lo reinicio al principio de cada vuelta de `loop()` con `wdt_reset()`. Como el programa nunca se bloquea, normalmente no llega a saltar, pero si algo se quedara colgado la placa se reiniciaría sola.
 
 ## Modo Arranque
-Al encender la máquina, la pantalla muestra CARGANDO y el LED1 parpadea tres veces, una vez por segundo. El parpadeo lo hace la interrupción de TimerOne. Cada segundo cambia el estado del LED y cuenta el cambio, y tres parpadeos son seis cambios entre encendido y apagado. Cuando termina, el LED1 se queda apagado y la máquina pasa sola al modo Servicio.
+Al encender la máquina, la pantalla muestra CARGANDO y el LED1 parpadea tres veces, una vez por segundo. El LED1 se enciende nada más arrancar y luego, cada vez que pasa un segundo según `millis()`, cambia de estado y cuento el cambio. Tres parpadeos son seis cambios entre encendido y apagado. Cuando termina, el LED1 se queda apagado y la máquina pasa sola al modo Servicio.
 
 ## Modo Servicio
 
@@ -160,14 +115,6 @@ Lo primero que ve el cliente es la temperatura y la humedad durante 5 segundos, 
 ### Menú de productos
 Después aparece el catálogo. Con el joystick hacia arriba y hacia abajo se pasa de un producto a otro, y pulsando el botón del joystick se elige el que está en pantalla.
 
-| Producto | Precio inicial |
-|---|---|
-| Café Solo | 1,00 EUR |
-| Café Cortado | 1,10 EUR |
-| Café Doble | 1,25 EUR |
-| Café Premium | 1,50 EUR |
-| Chocolate | 2,00 EUR |
-
 ### Preparación
 Al elegir un producto, la pantalla muestra Preparando Café y empieza la preparación, que dura un tiempo aleatorio entre 4 y 8 segundos. Mientras tanto, el brillo del LED2 va subiendo poco a poco con PWM, de forma que empieza apagado y llega al máximo justo al terminar.
 ```cpp
@@ -179,7 +126,7 @@ Para que los tiempos aleatorios no se repitan cada vez que enciendo la placa, in
 Cuando termina, la pantalla muestra RETIRE BEBIDA durante 3 segundos y la máquina vuelve a esperar al siguiente cliente.
 
 ### Cancelar
-Si mientras se atiende al cliente se mantiene pulsado el botón externo entre 2 y 3 segundos, se cancela todo y la máquina vuelve al principio del modo Servicio.
+En cualquier momento del modo Servicio, si se mantiene pulsado el botón externo entre 2 y 3 segundos y se suelta, se cancela todo y la máquina vuelve al principio del modo Servicio, sin reiniciar la placa.
 
 ## Modo Administración
 Para entrar hay que mantener pulsado el botón externo 5 segundos, y se puede hacer en cualquier momento. Mientras estoy en este modo, los dos LEDs se quedan encendidos. Para salir se vuelve a mantener pulsado el botón 5 segundos, y la máquina regresa al modo Servicio.
@@ -188,13 +135,16 @@ En el menú me muevo con el joystick hacia arriba y hacia abajo, abro una opció
 
 | Opción | Qué hace |
 |---|---|
-| Ver temperatura | Muestra la temperatura y la humedad |
-| Ver distancia | Muestra la distancia que mide el sensor de ultrasonidos |
-| Ver contador | Muestra los segundos que lleva encendida la placa, contados con TimerOne |
-| Modificar precios | Permite cambiar el precio de cada producto |
+| a. Temperatura | Muestra la temperatura y la humedad |
+| b. Distancia | Muestra la distancia que mide el sensor de ultrasonidos |
+| c. Contador | Muestra los segundos que lleva encendida la placa |
+| d. Precios | Permite cambiar el precio de cada producto |
 
 Las tres primeras pantallas se actualizan solas cada medio segundo gracias al hilo de refresco, así que los valores siempre son los más recientes.
 
-En Modificar precios aparece el catálogo. Al pulsar sobre un producto, puedo subir o bajar su precio de 0,05 en 0,05 euros con el joystick, y lo guardo pulsando otra vez. Si vuelvo atrás con la izquierda sin pulsar, el precio no cambia. Los precios nuevos se ven enseguida en el menú de los clientes.
+En la fila de arriba siempre pone MENU ADMIN, y en la de abajo la opción en la que estoy. En Precios aparece el catálogo. Al pulsar sobre un producto, puedo subir o bajar su precio de 0,05 en 0,05 euros con el joystick, y lo guardo pulsando otra vez. Si vuelvo atrás con la izquierda sin pulsar, el precio no cambia. Los precios nuevos se ven enseguida en el menú de los clientes.
 
 ## Demo
+- [Modo Arranque y Servicio](https://youtu.be/CODIGO)
+- [Cancelación y Reinicio de Estado](https://youtu.be/CODIGO)
+- [Modo Administración (Admin)](https://youtu.be/CODIGO)
