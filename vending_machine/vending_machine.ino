@@ -57,6 +57,7 @@ const char *PRODUCT_NAMES[NUM_PRODUCTS] = {
 // precios en céntimos, 100 son 1.00 EUR
 int prices[NUM_PRODUCTS] = {100, 110, 125, 150, 200};
 
+// opciones del menú admin
 const char *ADMIN_OPTIONS[NUM_ADMIN_OPTIONS] = {
     "a. Temperatura",
     "b. Distancia",
@@ -74,7 +75,7 @@ unsigned long stateStart = 0;
 // variables del modo servicio
 int selected = 0; // producto que se ve en el menú
 unsigned long prepTime = 0; // tiempo aleatorio de la preparación
-bool randomSeeded = false;
+bool randomSeeded = false; // para preparar los números aleatorios una sola vez
 
 // variables del modo admin
 int adminOption = 0; // opción que se ve en el menú admin
@@ -147,6 +148,7 @@ void loop() {
     }
 }
 
+// decide qué hacer según cuánto tiempo se ha pulsado el botón externo
 void handleButton() {
     ButtonEvent event = readButton();
 
@@ -158,13 +160,14 @@ void handleButton() {
             enterAdmin();
         }
     } else if (event == BTN_CANCEL) {
-        // entre 2 y 3 segundos, cancelo, pero solo si estoy atendiendo a un cliente
-        if (mode == SERVICE && serviceState != WAITING) {
+        // entre 2 y 3 segundos, cancelo y vuelvo al principio del modo servicio
+        if (mode == SERVICE) {
             goToWaiting();
         }
     }
 }
 
+// modo arranque, el LED1 parpadea 3 veces
 void runStartup() {
     // si ha pasado un segundo desde el último cambio del LED
     if (millis() - lastBlink >= LED1_INTERVAL) {
@@ -183,6 +186,7 @@ void runStartup() {
     }
 }
 
+// modo servicio, atiende al cliente fase a fase
 void runService() {
     // leo el joystick en cada vuelta para no perder ningún movimiento
     JoyEvent joy = readJoystick();
@@ -235,6 +239,7 @@ void runService() {
             break;
 
         case PREPARING: {
+            // tiempo que lleva preparándose
             unsigned long elapsed = millis() - stateStart;
 
             if (elapsed >= prepTime) {
@@ -273,6 +278,7 @@ void goToWaiting() {
     lcd.print("CLIENTE");
 }
 
+// entra en el modo admin y enseña su menú
 void enterAdmin() {
     mode = ADMIN;
 
@@ -285,6 +291,7 @@ void enterAdmin() {
     showAdminMenu();
 }
 
+// sale del modo admin y vuelve a esperar cliente
 void exitAdmin() {
     // apago el hilo de refresco para que no escriba encima del modo servicio
     refreshThread.enabled = false;
@@ -292,6 +299,7 @@ void exitAdmin() {
     goToWaiting();
 }
 
+// modo admin, menú y pantallas de administración
 void runAdmin() {
     JoyEvent joy = readJoystick();
 
@@ -334,6 +342,7 @@ void runAdmin() {
                 adminState = ADMIN_EDIT_PRICE;
                 showPriceEdit();
             } else if (joy == JOY_LEFT) {
+                // izquierda, vuelvo al menú admin
                 adminState = ADMIN_MENU;
                 showAdminMenu();
             }
@@ -438,6 +447,7 @@ void showProduct(int index) {
     printPrice(prices[index]);
 }
 
+// MENU ADMIN arriba y la opción en la que estoy abajo
 void showAdminMenu() {
     lcd.clear();
     lcd.print("MENU ADMIN");
@@ -446,7 +456,7 @@ void showAdminMenu() {
     lcd.print(ADMIN_OPTIONS[adminOption]);
 }
 
-// valores de las pantallas de admin; la llama el hilo de refresco
+// valores de las pantallas de admin, la llama el hilo de refresco
 void showAdminView() {
     if (adminState == ADMIN_TEMP) {
         showEnvironment();
