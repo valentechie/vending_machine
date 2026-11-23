@@ -4,16 +4,17 @@
 #include <avr/wdt.h>
 
 #include "config.h"
-#include "sensors.h"
-#include "joystick.h"
-#include "button.h"
+#include "inputs.h"
 
 LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 
+// hilos, tareas que se repiten cada cierto tiempo sin bloquear el programa
 ThreadController controller = ThreadController();
 Thread distanceThread = Thread();
 Thread environmentThread = Thread();
+Thread refreshThread = Thread();
 
+// los tres modos de la máquina
 enum Mode {
     STARTUP,
     SERVICE,
@@ -22,6 +23,7 @@ enum Mode {
 
 Mode mode = STARTUP;
 
+// las fases del modo servicio
 enum ServiceState {
     WAITING,
     SHOW_ENV,
@@ -32,6 +34,7 @@ enum ServiceState {
 
 ServiceState serviceState = WAITING;
 
+// las pantallas del modo admin
 enum AdminState {
     ADMIN_MENU,
     ADMIN_TEMP,
@@ -51,30 +54,35 @@ const char *PRODUCT_NAMES[NUM_PRODUCTS] = {
     "Chocolate"
 };
 
+// precios en céntimos, 100 son 1.00 EUR
 int prices[NUM_PRODUCTS] = {100, 110, 125, 150, 200};
 
 const char *ADMIN_OPTIONS[NUM_ADMIN_OPTIONS] = {
-    "Ver temperatura",
-    "Ver distancia",
-    "Ver contador",
-    "Modif. precios"
+    "a. Temperatura",
+    "b. Distancia",
+    "c. Contador",
+    "d. Precios"
 };
 
-unsigned long lastBlink = 0;
-int toggles = 0;
+// variables del modo arranque
+unsigned long lastBlink = 0; // cuándo cambió el LED1 por última vez
+int toggles = 0; // cuántas veces ha cambiado
 
+// momento en el que empezó la fase actual
 unsigned long stateStart = 0;
 
-int selected = 0;
-unsigned long prepTime = 0;
+// variables del modo servicio
+int selected = 0; // producto que se ve en el menú
+unsigned long prepTime = 0; // tiempo aleatorio de la preparación
 bool randomSeeded = false;
 
-int adminOption = 0;
-int priceIndex = 0;
-int editPrice = 0;
-unsigned long lastRefresh = 0;
+// variables del modo admin
+int adminOption = 0; // opción que se ve en el menú admin
+int priceIndex = 0; // producto cuyo precio se cambia
+int editPrice = 0; // precio nuevo mientras lo cambio
 
 void setup() {
+    // apago el watchdog mientras arranca todo
     wdt_disable();
 
     pinMode(LED1, OUTPUT);
@@ -83,30 +91,47 @@ void setup() {
     lcd.begin(16, 2);
     lcd.print("CARGANDO ...");
 
-    sensorsSetup();
-    joystickSetup();
-    buttonSetup();
+    inputsSetup();
 
+    // hilo que mide la distancia cada 200 ms
     distanceThread.enabled = true;
     distanceThread.onRun(updateDistance);
     distanceThread.setInterval(MEASURE_INTERVAL);
+
+    // hilo que lee la temperatura y la humedad cada 2 segundos
     environmentThread.enabled = true;
     environmentThread.onRun(updateEnvironment);
     environmentThread.setInterval(DHT_INTERVAL);
 
+    // hilo que actualiza las pantallas de admin, empieza apagado
+    refreshThread.enabled = false;
+    refreshThread.onRun(showAdminView);
+    refreshThread.setInterval(ADMIN_REFRESH);
+
     controller.add(&distanceThread);
     controller.add(&environmentThread);
+    controller.add(&refreshThread);
 
+    // el primer parpadeo empieza ya encendido
+    digitalWrite(LED1, HIGH);
+    toggles = 1;
+    lastBlink = millis();
+
+    // si el programa se queda colgado más de 2 segundos, la placa se reinicia sola
     wdt_enable(WDTO_2S);
 }
 
 void loop() {
+    // aviso al watchdog de que el programa sigue funcionando
     wdt_reset();
 
+    // ejecuta los hilos a los que les toca
     controller.run();
 
+    // miro si el botón externo pide cancelar o el modo admin
     handleButton();
 
+    // solo se ejecuta el código del modo en el que está la máquina
     switch (mode) {
         case STARTUP:
             runStartup();
@@ -123,19 +148,17 @@ void loop() {
 }
 
 void handleButton() {
-    unsigned long d = getPressDuration();
+    ButtonEvent event = readButton();
 
-    if (d == 0) {
-        return;
-    }
-
-    if (d >= ADMIN_TIME) {
+    if (event == BTN_ADMIN) {
+        // 5 segundos o más, entro o salgo del modo admin
         if (mode == ADMIN) {
             exitAdmin();
         } else {
             enterAdmin();
         }
-    } else if (d >= CANCEL_MIN && d <= CANCEL_MAX) {
+    } else if (event == BTN_CANCEL) {
+        // entre 2 y 3 segundos, cancelo, pero solo si estoy atendiendo a un cliente
         if (mode == SERVICE && serviceState != WAITING) {
             goToWaiting();
         }
@@ -143,12 +166,15 @@ void handleButton() {
 }
 
 void runStartup() {
+    // si ha pasado un segundo desde el último cambio del LED
     if (millis() - lastBlink >= LED1_INTERVAL) {
         lastBlink = millis();
 
+        // pongo el LED al revés de como estaba y cuento el cambio
         digitalWrite(LED1, !digitalRead(LED1));
         toggles = toggles + 1;
 
+        // después de 3 parpadeos paso al modo servicio
         if (toggles >= STARTUP_TOGGLES) {
             digitalWrite(LED1, LOW);
             mode = SERVICE;
@@ -158,11 +184,14 @@ void runStartup() {
 }
 
 void runService() {
+    // leo el joystick en cada vuelta para no perder ningún movimiento
     JoyEvent joy = readJoystick();
 
     switch (serviceState) {
         case WAITING:
+            // ¿hay alguien a menos de 1 metro?
             if (getDistance() < PRESENCE_DISTANCE) {
+                // la primera vez preparo los números aleatorios con un valor que no se repite
                 if (!randomSeeded) {
                     randomSeed(micros());
                     randomSeeded = true;
@@ -176,6 +205,7 @@ void runService() {
             break;
 
         case SHOW_ENV:
+            // después de 5 segundos enseño el menú de productos
             if (millis() - stateStart >= ENV_DISPLAY_TIME) {
                 selected = 0;
                 showProduct(selected);
@@ -184,6 +214,7 @@ void runService() {
             break;
 
         case MENU:
+            // arriba y abajo cambian de producto, pulsar el joystick lo elige
             if (joy == JOY_UP && selected > 0) {
                 selected = selected - 1;
                 showProduct(selected);
@@ -191,6 +222,7 @@ void runService() {
                 selected = selected + 1;
                 showProduct(selected);
             } else if (joy == JOY_PRESS) {
+                // tiempo aleatorio entre 4 y 8 segundos
                 prepTime = random(PREP_MIN, PREP_MAX + 1);
                 stateStart = millis();
 
@@ -206,18 +238,21 @@ void runService() {
             unsigned long elapsed = millis() - stateStart;
 
             if (elapsed >= prepTime) {
+                // ya está lista la bebida
                 analogWrite(LED2, 255);
                 lcd.clear();
                 lcd.print("RETIRE BEBIDA");
                 stateStart = millis();
                 serviceState = RETIRE;
             } else {
+                // el brillo del LED2 sube según el progreso (de 0 a 255)
                 analogWrite(LED2, map(elapsed, 0, prepTime, 0, 255));
             }
             break;
         }
 
         case RETIRE:
+            // después de 3 segundos vuelvo a esperar al siguiente cliente
             if (millis() - stateStart >= RETIRE_TIME) {
                 goToWaiting();
             }
@@ -225,11 +260,13 @@ void runService() {
     }
 }
 
+// vuelve al principio del modo servicio y apaga los LEDs
 void goToWaiting() {
     serviceState = WAITING;
     digitalWrite(LED1, LOW);
     analogWrite(LED2, 0);
 
+    // el mensaje no cabe en una fila, por eso uso las dos
     lcd.clear();
     lcd.print("ESPERANDO");
     lcd.setCursor(0, 1);
@@ -239,6 +276,7 @@ void goToWaiting() {
 void enterAdmin() {
     mode = ADMIN;
 
+    // en el modo admin los dos LEDs están encendidos
     digitalWrite(LED1, HIGH);
     digitalWrite(LED2, HIGH);
 
@@ -248,6 +286,8 @@ void enterAdmin() {
 }
 
 void exitAdmin() {
+    // apago el hilo de refresco para que no escriba encima del modo servicio
+    refreshThread.enabled = false;
     mode = SERVICE;
     goToWaiting();
 }
@@ -257,6 +297,7 @@ void runAdmin() {
 
     switch (adminState) {
         case ADMIN_MENU:
+            // arriba y abajo cambian de opción, pulsar la abre
             if (joy == JOY_UP && adminOption > 0) {
                 adminOption = adminOption - 1;
                 showAdminMenu();
@@ -271,16 +312,16 @@ void runAdmin() {
         case ADMIN_TEMP:
         case ADMIN_DIST:
         case ADMIN_COUNTER:
+            // izquierda, vuelvo al menú y apago el hilo de refresco
             if (joy == JOY_LEFT) {
+                refreshThread.enabled = false;
                 adminState = ADMIN_MENU;
                 showAdminMenu();
-            } else if (millis() - lastRefresh >= ADMIN_REFRESH) {
-                lastRefresh = millis();
-                showAdminView();
             }
             break;
 
         case ADMIN_PRICES:
+            // arriba y abajo cambian de producto
             if (joy == JOY_UP && priceIndex > 0) {
                 priceIndex = priceIndex - 1;
                 showProduct(priceIndex);
@@ -288,6 +329,7 @@ void runAdmin() {
                 priceIndex = priceIndex + 1;
                 showProduct(priceIndex);
             } else if (joy == JOY_PRESS) {
+                // pulsar, empiezo a cambiar el precio de este producto
                 editPrice = prices[priceIndex];
                 adminState = ADMIN_EDIT_PRICE;
                 showPriceEdit();
@@ -298,6 +340,7 @@ void runAdmin() {
             break;
 
         case ADMIN_EDIT_PRICE:
+            // arriba sube 0.05 EUR y abajo baja 0.05 EUR
             if (joy == JOY_UP && editPrice + PRICE_STEP <= MAX_PRICE) {
                 editPrice = editPrice + PRICE_STEP;
                 showPriceEdit();
@@ -305,10 +348,12 @@ void runAdmin() {
                 editPrice = editPrice - PRICE_STEP;
                 showPriceEdit();
             } else if (joy == JOY_PRESS) {
+                // pulsar, guardo el precio nuevo
                 prices[priceIndex] = editPrice;
                 adminState = ADMIN_PRICES;
                 showProduct(priceIndex);
             } else if (joy == JOY_LEFT) {
+                // izquierda, vuelvo atrás sin guardar
                 adminState = ADMIN_PRICES;
                 showProduct(priceIndex);
             }
@@ -316,6 +361,7 @@ void runAdmin() {
     }
 }
 
+// abre la opción elegida en el menú admin
 void openAdminOption() {
     if (adminOption == 0) {
         adminState = ADMIN_TEMP;
@@ -330,17 +376,27 @@ void openAdminOption() {
         return;
     }
 
+    // escribo la parte fija de la pantalla una sola vez
     lcd.clear();
+    if (adminState == ADMIN_DIST) {
+        lcd.print("Distancia:");
+    } else if (adminState == ADMIN_COUNTER) {
+        lcd.print("Tiempo encendido");
+    }
+
+    // enseño los valores y enciendo el hilo que los actualiza cada medio segundo
     showAdminView();
-    lastRefresh = millis();
+    refreshThread.enabled = true;
 }
 
+// borra una fila del LCD y deja el cursor al principio
 void clearRow(int row) {
     lcd.setCursor(0, row);
     lcd.print("                ");
     lcd.setCursor(0, row);
 }
 
+// escribe un precio en céntimos como 1.25 EUR
 void printPrice(int cents) {
     lcd.print(cents / 100);
     lcd.print('.');
@@ -351,6 +407,7 @@ void printPrice(int cents) {
     lcd.print(" EUR");
 }
 
+// temperatura arriba y humedad abajo
 void showEnvironment() {
     clearRow(0);
     lcd.print("Temp: ");
@@ -359,7 +416,7 @@ void showEnvironment() {
     } else {
         lcd.print(getTemperature(), 0);
     }
-    lcd.print((char)223);
+    lcd.print((char)223); // símbolo de grado
     lcd.print("C");
 
     clearRow(1);
@@ -372,9 +429,9 @@ void showEnvironment() {
     lcd.print(" %");
 }
 
+// nombre del producto arriba y precio abajo
 void showProduct(int index) {
     lcd.clear();
-    lcd.print(">");
     lcd.print(PRODUCT_NAMES[index]);
 
     lcd.setCursor(0, 1);
@@ -384,20 +441,17 @@ void showProduct(int index) {
 void showAdminMenu() {
     lcd.clear();
     lcd.print("MENU ADMIN");
-    lcd.setCursor(15, 0);
-    lcd.print((char)('a' + adminOption));
 
     lcd.setCursor(0, 1);
-    lcd.print(">");
     lcd.print(ADMIN_OPTIONS[adminOption]);
 }
 
+// valores de las pantallas de admin; la llama el hilo de refresco
 void showAdminView() {
     if (adminState == ADMIN_TEMP) {
         showEnvironment();
     } else if (adminState == ADMIN_DIST) {
-        clearRow(0);
-        lcd.print("Distancia:");
+        // solo reescribo la fila de abajo, que es la que cambia
         clearRow(1);
         if (getDistance() >= NO_ECHO_DISTANCE) {
             lcd.print("Fuera de rango");
@@ -406,14 +460,14 @@ void showAdminView() {
             lcd.print(" cm");
         }
     } else if (adminState == ADMIN_COUNTER) {
-        clearRow(0);
-        lcd.print("Tiempo encendido");
+        // segundos desde que se encendió la placa
         clearRow(1);
         lcd.print(millis() / 1000);
         lcd.print(" s");
     }
 }
 
+// pantalla para cambiar el precio
 void showPriceEdit() {
     lcd.clear();
     lcd.print(PRODUCT_NAMES[priceIndex]);
