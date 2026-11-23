@@ -19,7 +19,7 @@ const int LCD_D7 = A5;
 // botón externo (el pin 2 admite interrupciones)
 const int BUTTON = 2;
 
-// joystick (en mi montaje está girado, por eso X e Y están cambiados)
+// joystick
 const int JOY_SW = 4;
 const int JOY_X = A0;
 const int JOY_Y = A1;
@@ -39,6 +39,7 @@ const unsigned long MEASURE_INTERVAL = 200; // mido la distancia cada 200 ms
 const unsigned long ECHO_TIMEOUT = 30000; // espero el eco como mucho 30 ms
 const float NO_ECHO_DISTANCE = 999.0f; // valor que uso cuando no vuelve el eco
 const float PRESENCE_DISTANCE = 100.0f; // a menos de 100 cm hay un cliente
+const int MAX_MISSES = 5; // fuera de rango solo si fallan 5 medidas seguidas (1 segundo)
 
 const unsigned long DHT_INTERVAL = 2000; // el DHT11 es lento, lo leo cada 2 segundos
 
@@ -48,9 +49,9 @@ const int JOY_HIGH = 700; // por encima de este valor también
 const unsigned long JOY_DEBOUNCE = 50; // antirrebote del botón del joystick
 
 const unsigned long BUTTON_DEBOUNCE = 50; // antirrebote del botón externo
-const unsigned long CANCEL_MIN = 2000; // cancelar: entre 2 y 3 segundos
+const unsigned long CANCEL_MIN = 2000; // cancelar, entre 2 y 3 segundos
 const unsigned long CANCEL_MAX = 3000;
-const unsigned long ADMIN_TIME = 5000; // modo admin: 5 segundos o más
+const unsigned long ADMIN_TIME = 5000; // modo admin, 5 segundos o más
 
 // MODO SERVICIO
 const unsigned long ENV_DISPLAY_TIME = 5000; // muestro temperatura y humedad 5 segundos
@@ -61,8 +62,8 @@ const unsigned long RETIRE_TIME = 3000; // "RETIRE BEBIDA" se ve 3 segundos
 // precios en céntimos para no tener errores con los decimales
 const int NUM_PRODUCTS = 5;
 const int PRICE_STEP = 5; // los precios cambian de 0.05 en 0.05
-const int MIN_PRICE = 5;
-const int MAX_PRICE = 995;
+const int MIN_PRICE = 5; // precio mínimo, 0.05 EUR
+const int MAX_PRICE = 995; // precio máximo, 9.95 EUR
 
 // MODO ADMIN
 const int NUM_ADMIN_OPTIONS = 4;
