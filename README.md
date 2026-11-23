@@ -1,6 +1,10 @@
 # Máquina Expendedora con Arduino
 Controlador software para una máquina expendedora de café basada en **Arduino UNO**, desarrollado con los sensores y actuadores del kit de laboratorio de la asignatura. El sistema responde a eventos físicos en tiempo real e interactúa con el usuario mediante una pantalla LCD, un joystick analógico, un pulsador y dos LEDs, mientras monitoriza de forma **no bloqueante** la temperatura, la humedad y la distancia a la que se encuentra el cliente.
 
+| Modo Arranque | Modo Servicio | Preparación bebida |
+|:------:|:------:|:------:|
+| ![](./docs/resultado1.jpeg) | ![](./docs/resultado2.jpeg) | ![](./docs/resultado3.jpeg) |
+
 ## Índice
 - [Hardware y conexiones](#hardware-y-conexiones)
 - [Estructura del código](#estructura-del-código)
@@ -13,14 +17,12 @@ Controlador software para una máquina expendedora de café basada en **Arduino 
 ## Hardware y conexiones
 
 ### Tabla de pines
-| Componente | Pin | | Componente | Pin |
-|---|---|---|---|---|
-| Botón externo | 2 | | Ultrasonidos (Trig) | 8 |
-| LCD (pin E) | 3 | | LED2 | 10 |
-| Joystick (botón SW) | 4 | | LED1 | 11 |
-| LCD (pin RS) | 5 | | Joystick (eje VRy) | A0 |
-| DHT11 (señal) | 6 | | Joystick (eje VRx) | A1 |
-| Ultrasonidos (Echo) | 7 | | LCD (pines D4 a D7) | A2 a A5 |
+| Componente | Pin | | Componente | Pin | | Componente | Pin |
+|---|---|---|---|---|---|---|---|
+| Botón externo | 2 | | DHT11 (señal) | 6 | | LED1 | 11 |
+| LCD (pin E) | 3 | | Ultrasonidos (Echo) | 7 | | Joystick (eje VRy) | A0 |
+| Joystick (botón SW) | 4 | | Ultrasonidos (Trig) | 8 | | Joystick (eje VRx) | A1 |
+| LCD (pin RS) | 5 | | LED2 | 10 | | LCD (pines D4 a D7) | A2 a A5 |
 
 **Otros detalles del montaje:**
 
