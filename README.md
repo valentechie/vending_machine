@@ -90,13 +90,13 @@ El modo Admin se activa en cuanto el botón lleva 5 segundos pulsado, sin tener 
 Para comprobar los tiempos hice un programa de prueba que escribía por el puerto serie cuánto duraba cada pulsación, y así vi que yo contaba los segundos demasiado rápido.
 
 ### Sensores y entradas
-**Joystick.** Leo los ejes con `analogRead()`, que da valores de 0 a 1023. Hay movimiento cuando el valor baja de 300 o sube de 700, y cada movimiento lo detecto una sola vez, al salir del centro, para que el menú no avance sin parar. En mi montaje el joystick está girado, por eso el eje VRx es el que controla arriba y abajo.
+- **Joystick.** Leo los ejes con `analogRead()`, que da valores de 0 a 1023. Hay movimiento cuando el valor baja de 300 o sube de 700, y cada movimiento lo detecto una sola vez, al salir del centro, para que el menú no avance sin parar. En mi montaje el joystick está girado, por eso el eje VRx es el que controla arriba y abajo.
 
-**Ultrasonidos.** Envío un pulso de 10 microsegundos por Trig y mido con `pulseIn()` cuánto tarda en volver el eco. Lo multiplico por 0,01715, que es la velocidad del sonido en cm por microsegundo dividida entre dos. Le pongo un tiempo máximo de 30 ms para que no se quede esperando. A veces el sensor pierde un eco aunque haya algo delante, así que solo lo trato como fuera de rango si fallan 5 medidas seguidas, es decir, un segundo entero sin eco.
+- **Ultrasonidos.** Envío un pulso de 10 microsegundos por Trig y mido con `pulseIn()` cuánto tarda en volver el eco. Lo multiplico por 0,01715, que es la velocidad del sonido en cm por microsegundo dividida entre dos. Le pongo un tiempo máximo de 30 ms para que no se quede esperando. A veces el sensor pierde un eco aunque haya algo delante, así que solo lo trato como fuera de rango si fallan 5 medidas seguidas, es decir, un segundo entero sin eco.
 
-**DHT11.** Lo leo con la librería de Adafruit. Si una lectura falla me quedo con la última buena, y si no hay ninguna salen dos guiones. Al principio siempre salían los guiones porque tenía la señal en el pin equivocado del módulo.
+- **DHT11.** Lo leo con la librería de Adafruit. Si una lectura falla me quedo con la última buena, y si no hay ninguna salen dos guiones. Al principio siempre salían los guiones porque tenía la señal en el pin equivocado del módulo.
 
-**Precios.** Los guardo en céntimos, por ejemplo 125 para 1,25 euros, para evitar errores de redondeo al cambiarlos de 0,05 en 0,05.
+- **Precios.** Los guardo en céntimos, por ejemplo 125 para 1,25 euros, para evitar errores de redondeo al cambiarlos de 0,05 en 0,05.
 
 ### Watchdog
 Uso el watchdog con un tiempo de 2 segundos. Lo desactivo al empezar `setup()`, lo activo al final y lo reinicio al principio de cada vuelta de `loop()` con `wdt_reset()`. Como el programa nunca se bloquea, normalmente no llega a saltar, pero si algo se quedara colgado la placa se reiniciaría sola.
